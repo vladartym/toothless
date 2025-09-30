@@ -13,7 +13,7 @@ Inspired by [Claude Imagine](https://claude.ai/imagine/) (Anthropic's experiment
 
 ## Demo
 
-![Demo](./demo.mp4)
+[![Demo Video](./thumbnail.png)](https://youtu.be/g4y4r2LhvVE)
 
 *Watch Claude generate complete web pages in real-time as you navigate through the app*
 
