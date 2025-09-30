@@ -11,6 +11,12 @@ Inspired by [Claude Imagine](https://claude.ai/imagine/) (Anthropic's experiment
 
 ⚠️ **This is very early experimentation.** Expect rough edges, inconsistencies, and surprises. It's a learning project exploring the boundaries of AI-generated UIs.
 
+## Demo
+
+![Demo](./demo.mov)
+
+*Watch Claude generate complete web pages in real-time as you navigate through the app*
+
 ## How It Works
 
 1. **Start Simple** - Enter a city name to see weather information
