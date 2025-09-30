@@ -1,4 +1,5 @@
-# Toothless 🐉
+# How To Train Your Django 🐉
+## (Project Toothless)
 
 > **Early experimentation** with AI-generated user interfaces - an open-source exploration inspired by Anthropic's Claude Imagine.
 
