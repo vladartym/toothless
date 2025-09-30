@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from django.http import HttpResponse, JsonResponse
 from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import csrf_exempt
@@ -7,20 +8,47 @@ from asgiref.sync import async_to_sync
 import asyncio
 
 
+# Load system prompt once at module level
+SYSTEM_PROMPT_PATH = Path(__file__).parent / 'system_prompt.md'
+SYSTEM_PROMPT = ""
+if SYSTEM_PROMPT_PATH.exists():
+    with open(SYSTEM_PROMPT_PATH, 'r') as f:
+        SYSTEM_PROMPT = f.read()
+
+
 @require_http_methods(["GET"])
 async def get_data(request, action):
     """Handle dynamic GET requests from HTMX - generates pages based on action"""
 
-    # Get additional context from hx-vals if provided
-    page_description = request.GET.get('description', '')
+    # Get all context from hx-vals if provided
+    description = request.GET.get('description', '')
+    from_page = request.GET.get('from', '')
+    to_page = request.GET.get('to', '')
     context = request.GET.get('context', '')
 
-    print(f"\n{'='*60}")
-    print(f"🔗 Dynamic navigation request received")
-    print(f"   Action: {action}")
-    print(f"   Description: {page_description}")
-    print(f"   Context: {context}")
-    print(f"{'='*60}\n")
+    # Get any additional context fields
+    additional_context = {k: v for k, v in request.GET.items()
+                         if k not in ['description', 'from', 'to', 'context']}
+
+    print(f"\n{'='*80}")
+    print(f"🎯 HTMX NAVIGATION CLICKED")
+    print(f"{'='*80}")
+    print(f"📍 Full Endpoint: /api/get/{action}/")
+    print(f"🏷️  Action Parameter: {action}")
+    print(f"{'─'*80}")
+    print(f"📦 hx-vals Navigation Context:")
+    print(f"   📝 description: {description or '❌ NOT PROVIDED'}")
+    print(f"   ⬅️  from: {from_page or '❌ NOT PROVIDED'}")
+    print(f"   ➡️  to: {to_page or '❌ NOT PROVIDED'}")
+    if context:
+        print(f"   🏷️  context: {context}")
+    if additional_context:
+        print(f"   ➕ Additional fields:")
+        for key, value in additional_context.items():
+            print(f"      • {key}: {value}")
+    print(f"{'─'*80}")
+    print(f"🔄 This context will guide Claude's page generation")
+    print(f"{'='*80}\n")
 
     try:
         # Set API key from environment
@@ -28,45 +56,45 @@ async def get_data(request, action):
         print(f"🔑 API Key loaded: {'Yes' if api_key else 'No'}")
         os.environ['ANTHROPIC_API_KEY'] = api_key
 
-        # Build context-aware prompt with additional details
+        # Build context-aware prompt with navigation flow
         context_info = ""
-        if page_description:
-            context_info += f"\n\nPage Description: {page_description}"
+        if description:
+            context_info += f"\n\n📝 What to Generate: {description}"
+        if from_page:
+            context_info += f"\n⬅️  Coming From: {from_page}"
+        if to_page:
+            context_info += f"\n➡️  Going To: {to_page}"
         if context:
-            context_info += f"\nAdditional Context: {context}"
+            context_info += f"\n🏷️  Context Type: {context}"
+        if additional_context:
+            context_info += f"\n➕ Additional Context: {additional_context}"
 
         # Create context-aware prompt based on action
-        prompt = f"""The user clicked on an element with the action: "{action}"{context_info}
+        prompt = f"""{SYSTEM_PROMPT}
 
-Based on this action and context, generate a complete, full-page styled HTML that responds to what the user wants to see.
+---
 
-Analyze the action description and infer the user's intent. For example:
-- "7-day-forecast-Toronto" with description "Show detailed 7-day weather forecast with daily highs, lows, and conditions"
-- "temperature-details-Miami" with description "Display temperature trends, feels like, and heat index information"
-- "back-to-weather-Boston" with description "Return to main weather dashboard overview"
+## Task
+The user clicked on an element with the action: "{action}"{context_info}
 
-The HTML should:
-- Match the existing Airbnb-style design (clean, minimal, modern)
-- Use inline styles with the color scheme: #222 for text, #717171 for secondary text, #f7f7f7 for backgrounds
-- Use the font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif
-- Include realistic, detailed data relevant to the action
-- Be responsive and well-formatted with good padding and spacing
-- Follow the page description guidance if provided
+Based on this navigation context, generate the appropriate page.
 
-**CRITICAL: Add HTMX attributes to ALL interactive elements with hx-vals for context:**
-- Use hx-get="/api/get/{{descriptive-action}}" on buttons, cards, links, sections
-- Use hx-vals='json:{{"description": "detailed description of what this page should show", "context": "additional context"}}' to provide guidance for next page generation
-- Use hx-target="#main-content" on all HTMX elements
-- Use hx-swap="innerHTML" on all HTMX elements
-- Make the action descriptions semantic and descriptive
-- The description in hx-vals should explain what data/layout the next page needs
+⚠️ **MANDATORY: Include 3-5 different clickable elements with COMPLETE hx-vals context**
 
-Examples of HTMX attributes to include:
-- <button hx-get="/api/get/back-to-main-weather-Toronto" hx-vals='json:{{"description": "Main weather dashboard with current conditions, forecast cards, and quick stats", "context": "navigation-back"}}' hx-target="#main-content" hx-swap="innerHTML">Back</button>
-- <div hx-get="/api/get/detailed-temperature-analysis-Toronto" hx-vals='json:{{"description": "Temperature chart showing hourly trends, high/low analysis, and historical comparison", "context": "temperature-deep-dive"}}' hx-target="#main-content" hx-swap="innerHTML" style="cursor: pointer;">
-- <a hx-get="/api/get/wind-speed-details-Toronto" hx-vals='json:{{"description": "Wind data with speed, direction, gusts, and wind chill information", "context": "wind-details"}}' hx-target="#main-content" hx-swap="innerHTML">View Wind Details</a>
+EVERY clickable element needs all attributes INCLUDING rich hx-vals:
+- hx-get="/api/get/{{action}}"
+- hx-vals='json:{{"description":"detailed instructions for next page","from":"current-page-identifier","to":"destination-identifier"}}'
+- hx-target="#main-content"
+- hx-swap="innerHTML"
 
-Return ONLY the HTML code, no markdown or explanations."""
+Example with PROPER navigation context:
+<button hx-get="/api/get/back-Toronto" hx-vals='json:{{"description":"Main weather dashboard with current conditions and forecast cards","from":"forecast-details","to":"main-dashboard"}}' hx-target="#main-content" hx-swap="innerHTML" style="padding:14px 24px;background:#e61e4d;color:#fff;border:none;border-radius:8px;cursor:pointer;">← Back</button>
+
+<div hx-get="/api/get/hourly-Toronto" hx-vals='json:{{"description":"Hour-by-hour breakdown for next 24 hours with temp and conditions","from":"main-dashboard","to":"hourly-view","city":"Toronto"}}' hx-target="#main-content" hx-swap="innerHTML" style="cursor:pointer;padding:20px;background:#f7f7f7;border-radius:12px;">
+  <p style="font-size:18px;font-weight:600;">⏰ Hourly Forecast</p>
+</div>
+
+Return ONLY the HTML code, no markdown."""
 
         print(f"📝 Prompt created ({len(prompt)} chars)")
 
@@ -96,6 +124,19 @@ Return ONLY the HTML code, no markdown or explanations."""
                         generated_html += block.text
 
         print(f"\n✅ Generated HTML: {len(generated_html)} chars")
+
+        # Clean up markdown code blocks if present
+        if generated_html:
+            # Remove ```html and ``` markers
+            generated_html = generated_html.strip()
+            if generated_html.startswith('```html'):
+                generated_html = generated_html[7:]  # Remove ```html
+            elif generated_html.startswith('```'):
+                generated_html = generated_html[3:]   # Remove ```
+            if generated_html.endswith('```'):
+                generated_html = generated_html[:-3]  # Remove trailing ```
+            generated_html = generated_html.strip()
+            print(f"🧹 Cleaned HTML: {len(generated_html)} chars")
 
         # Return generated HTML
         if generated_html:
@@ -118,9 +159,14 @@ async def post_data(request):
     """Handle weather requests from HTMX using Claude Agent SDK"""
     city = request.POST.get('city', '').strip()
 
-    print(f"\n{'='*60}")
-    print(f"🌤️  Weather request received for: {city}")
-    print(f"{'='*60}\n")
+    print(f"\n{'='*80}")
+    print(f"📝 FORM SUBMISSION (Initial Request)")
+    print(f"{'='*80}")
+    print(f"📍 Endpoint: /api/post/")
+    print(f"🏙️  City Submitted: {city}")
+    print(f"{'─'*80}")
+    print(f"🔄 This will generate the initial weather dashboard")
+    print(f"{'='*80}\n")
 
     if not city:
         print("❌ No city provided")
@@ -134,34 +180,47 @@ async def post_data(request):
         os.environ['ANTHROPIC_API_KEY'] = api_key
 
         # Create prompt with form context
-        prompt = f"""The user submitted a form with the label "Get the weather for:" and entered the city name "{city}".
+        prompt = f"""{SYSTEM_PROMPT}
 
-Generate a complete, full-page styled HTML for a weather page for {city}. The HTML should:
-- Match the existing Airbnb-style design (clean, minimal, modern)
-- Include realistic weather data (temperature, conditions, humidity, wind speed, forecast)
-- Use inline styles with the color scheme: #222 for text, #717171 for secondary text, #f7f7f7 for backgrounds
-- Include weather emoji/icons
-- Be responsive and well-formatted
-- Use the font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif
-- Make it a full, beautiful weather dashboard that takes up the entire content area
-- Include padding and margins for good spacing
+---
 
-**CRITICAL: Add HTMX attributes to ALL interactive elements with hx-vals for context:**
-- Use hx-get="/api/get/{{descriptive-action}}" on buttons, cards, links, sections
-- Use hx-vals='json:{{"description": "detailed description of what this page should show", "context": "additional context"}}' to provide guidance for next page generation
-- Use hx-target="#main-content" on all HTMX elements
-- Use hx-swap="innerHTML" on all HTMX elements
-- Make the action descriptions semantic and descriptive (e.g., "view-7-day-forecast-{city}", "hourly-breakdown-{city}", "temperature-details-{city}")
-- The description in hx-vals should explain what data/layout the next page needs
-- Add multiple clickable elements: forecast cards, data sections, "view details" buttons
-- Make sections/cards clickable for drill-down details
+## Task
+The user submitted a form with the label "Get the weather for:" and entered the city name "{city}".
 
-Examples of HTMX attributes to include:
-- <div hx-get="/api/get/7-day-forecast-{city}" hx-vals='json:{{"description": "Detailed 7-day forecast with daily high/low temperatures, weather conditions, precipitation chance, and weather icons for each day", "context": "forecast-view"}}' hx-target="#main-content" hx-swap="innerHTML" style="cursor: pointer; padding: 20px; background: #f7f7f7; border-radius: 12px; margin: 10px 0;">
-- <button hx-get="/api/get/hourly-breakdown-{city}" hx-vals='json:{{"description": "Hour-by-hour weather breakdown for the next 24 hours showing temperature, conditions, and precipitation", "context": "hourly-forecast"}}' hx-target="#main-content" hx-swap="innerHTML" style="...">View Hourly Forecast</button>
-- <a hx-get="/api/get/temperature-analysis-{city}" hx-vals='json:{{"description": "Temperature trends with graphs, feels-like temperature, heat index, and historical comparison", "context": "temperature-details"}}' hx-target="#main-content" hx-swap="innerHTML">Detailed Temperature</a>
+Generate a minimal weather dashboard for {city} with:
+- Current temperature and conditions (in a large centered display)
+- 3-5 clickable sections/cards
+- Key stats (humidity, wind)
 
-Return ONLY the HTML code, no markdown or explanations."""
+⚠️ **MANDATORY: Create 3-5 different clickable elements with COMPLETE navigation context in hx-vals**
+
+The dashboard MUST have these clickable sections:
+1. Forecast card → detailed forecast view
+2. Temperature section → temperature breakdown
+3. Wind/humidity card → weather details
+4. Additional stat sections as needed
+
+EVERY clickable element needs rich hx-vals with navigation flow:
+- hx-get="/api/get/{{action}}"
+- hx-vals='json:{{"description":"detailed instructions","from":"main-dashboard","to":"destination-page"}}'
+- hx-target="#main-content"
+- hx-swap="innerHTML"
+- style="cursor:pointer; ..." (make it look clickable)
+
+Example elements with PROPER context:
+<div hx-get="/api/get/forecast-{city}" hx-vals='json:{{"description":"5-day weather forecast with daily temps, conditions, and precipitation","from":"main-dashboard","to":"forecast-view","city":"{city}"}}' hx-target="#main-content" hx-swap="innerHTML" style="cursor:pointer;padding:20px;background:#f7f7f7;border-radius:12px;margin:10px 0;">
+  <p style="font-size:18px;font-weight:600;margin:0 0 8px;">📅 Forecast</p>
+  <p style="color:#717171;margin:0;">View 5-day forecast</p>
+</div>
+
+<div hx-get="/api/get/temperature-{city}" hx-vals='json:{{"description":"Temperature details with current, feels like, high/low, and hourly trend","from":"main-dashboard","to":"temperature-details","currentTemp":"72F"}}' hx-target="#main-content" hx-swap="innerHTML" style="cursor:pointer;padding:20px;background:#f7f7f7;border-radius:12px;margin:10px 0;">
+  <p style="color:#717171;margin:0 0 4px;">Temperature</p>
+  <p style="font-size:32px;font-weight:600;margin:0;">72°F</p>
+</div>
+
+<div hx-get="/api/get/wind-{city}" hx-vals='json:{{"description":"Wind speed, direction, gusts, and humidity information","from":"main-dashboard","to":"wind-details"}}' hx-target="#main-content" hx-swap="innerHTML" style="cursor:pointer;padding:16px;background:#f7f7f7;border-radius:8px;">💨 Wind Details →</div>
+
+Return ONLY the HTML code, no markdown."""
 
         print(f"📝 Prompt created ({len(prompt)} chars)")
 
@@ -191,6 +250,19 @@ Return ONLY the HTML code, no markdown or explanations."""
                         generated_html += block.text
 
         print(f"\n✅ Generated HTML: {len(generated_html)} chars")
+
+        # Clean up markdown code blocks if present
+        if generated_html:
+            # Remove ```html and ``` markers
+            generated_html = generated_html.strip()
+            if generated_html.startswith('```html'):
+                generated_html = generated_html[7:]  # Remove ```html
+            elif generated_html.startswith('```'):
+                generated_html = generated_html[3:]   # Remove ```
+            if generated_html.endswith('```'):
+                generated_html = generated_html[:-3]  # Remove trailing ```
+            generated_html = generated_html.strip()
+            print(f"🧹 Cleaned HTML: {len(generated_html)} chars")
 
         # Return generated HTML
         if generated_html:
